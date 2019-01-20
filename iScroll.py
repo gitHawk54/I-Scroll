@@ -16,15 +16,27 @@ cap_region_x_begin=0.4  # start point/total width
 cap_region_y_end=0.8  # start point/total width
 threshold = 60  #  BINARY threshold
 blurValue = 41  # GaussianBlur parameter
+tabshift = False
 bgSubThreshold = 50
 learningRate = 0
 window = 25
 trigger=0
+zoomTrigger = False
 
 # variables
 isBgCaptured = 0   # bool, whether the background captured
 triggerSwitch = False  # if true, keyborad simulator works
 hasReset = True
+def removeExtras(arr):
+    newArr = []
+    start = arr[0]
+    i = 0
+    while i!=len(arr) :
+        if(arr[i]!=start or i==len(arr)-1):
+            newArr.append(start)
+            start = arr[i]
+        i=i+1
+    return newArr
 
 def printThreshold(thr):
     print("! Changed threshold to "+str(thr))
@@ -38,6 +50,8 @@ def resetScreen():
     triggerSwitch = False
     isBgCaptured = 0
     print('!!!Reset BackGround!!!')
+    for k in range(0,100000):
+        k=k*1
     bgModel = cv2.createBackgroundSubtractorMOG2(0,bgSubThreshold)
     isBgCaptured = 1
     print('!!!Background Captured!!!')
@@ -88,7 +102,7 @@ startTime = time.time()
 otherTime = time.time()
 sizeQ = 32
 Q = np.zeros((2,sizeQ))
-
+arrC = np.zeros(32)
 while camera.isOpened():
     ret, frame = camera.read()
     threshold = cv2.getTrackbarPos('trh1', 'trackbar')
@@ -138,7 +152,10 @@ while camera.isOpened():
                 if isFinishCal is True and cnt <= 2:
                     print (cnt)
                     #app('System Events').keystroke(' ')  # simulate pressing blank space
-                    
+        if(cnt>=5):
+            
+            resetScreen()
+            
         M = cv2.moments(res)
         try:
             cx = int(M['m10']/M['m00'])
@@ -150,13 +167,29 @@ while camera.isOpened():
             hasReset = False
             Q[0,:] = cx
             Q[1,:] = cy 
+            arrC[:] = 0
         else:
             Q[:,0:sizeQ-1] = Q[:,1:sizeQ]
 
             Q[0,sizeQ-1] = cx
             Q[1,sizeQ-1] = cy
+            arrC[0:sizeQ-1] = arrC[1:sizeQ]
+            arrC[sizeQ-1] = cnt
+            
+        pattern = removeExtras(arrC)
+        if(len(pattern)>=4 and pattern[0]==0 and pattern[1]==1 and pattern[2]==0 and pattern[3]==1):
+            #Zoom has been triggered
+            zoomTrigger =True
+            otherTime = time.time()
+        if(len(pattern)>=4 and pattern[0]==0 and pattern[1]==1 and pattern[2]==0 and pattern[3]==1 and zoomTrigger == True):
+            #Zoom has been triggered off
+            zoomTrigger = False
             #otherTime = time.time()
         #print(Q)
+        if(time.time()>otherTime+10 and zoomTrigger==True): #Triggering zoom off after every 10 seconds no matter what
+            zoomTrigger = False
+            
+        
         cv2.imshow('output', drawing)
         #print(maxArea)
         #File Handling
@@ -175,14 +208,23 @@ while camera.isOpened():
         meany=np.mean(Q[1,:])
         meanx=np.mean(Q[0,:])
 
-        if(Q[1,-1]>meany and abs(meany-Q[1,-1])>window):
+        if(Q[1,-1]>meany and abs(meany-Q[1,-1])>window and zoomTrigger==False):
             #is moving down
             y=1
             pgi.scroll(-50)
-        elif((Q[1,-1]<meany and abs(meany-Q[1,-1])>window)):
+        elif((Q[1,-1]<meany and abs(meany-Q[1,-1])>window and zoomTrigger==False)):
             #is moving up
             y=2
             pgi.scroll(50)
+        elif((Q[1,-1]>meany and abs(meany-Q[1,-1])>window and zoomTrigger==True)):
+            #zoomin
+            y=1
+            pgi.hotkey('ctrl','+')
+        elif((Q[1,-1]<meany and abs(meany-Q[1,-1])>window and zoomTrigger==True)):
+            #zoomout
+            y=2
+            pgi.hotkey('ctrl','-')
+
         else:
             y=0
             trigger+=1
@@ -208,7 +250,7 @@ while camera.isOpened():
             tabshift=False
             trigger=0
             #resetScreen()
-
+        
         print('y=',y,'x=',x)
         
         f.write(str(valueWrite))
